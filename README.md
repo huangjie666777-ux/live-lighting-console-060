@@ -1,9 +1,52 @@
-# Live Lighting Console
+# 小剧场浏览器灯光走台控台
 
-Svelte 5 and TypeScript project skeleton. Business features are not implemented.
+固定 12 盏调光灯的纯浏览器走台控台（不接硬件）。Svelte 5 + TypeScript + Vite。
 
-Node.js 22.19.0; dependencies are pinned in package.json and package-lock.json.
+## 启动
 
-- `npm run dev` starts Vite.
-- `npm run build` runs Svelte checks and the production build.
-- `npm test` runs tests added to this project.
+```bash
+npm install
+npm run dev       # 打开 Vite 输出的本地地址
+npm test          # Vitest 引擎测试（9 项）
+npm run build     # svelte-check 类型检查 + 生产构建
+```
+
+## 界面与操作
+
+- **舞台 SVG**：12 盏灯上下两排布位，灯体颜色、光束与百分比显示总控后的实际输出；红圈表示该灯正被手动接管。
+- **GO**：执行下一条 Cue（停止后首次 GO 从第 1 条开始）。
+- **跳场至选中**：先在右侧节目单点选任意 Cue，再执行；目标亮度始终按节目顺序从全零解析，与之前走过哪条路径无关。
+- **暂停 / 继续**：冻结全部渐变与跟随倒计时；继续只推进剩余时间。
+- **停止**：立即全零、退出运行、清除全部手动接管和待触发跟随，节目恢复可编辑。
+- **总控 / 黑场**：总控是 0–100% 的输出比例；黑场强制全零。二者不改任何 Cue，也不暂停计时，解除后恢复当时应有输出。
+- **手动接管**：勾选某盏灯后拖动滑块直接调光；取消勾选立即回到当时基础渐变值。基础渐变继续在后台运行。
+
+## Cue 编辑
+
+右侧节目单支持新增、删除、上移/下移调序，以及编辑：
+
+- 唯一**编号**与**名称**（空值、编号重复会在该 Cue 上标红并禁止 GO）；
+- 12 灯**记录亮度**格：留空 = 不记录（继承前序 Cue，首条之前全零）；填 `0` = 显式熄灭；
+- **升光秒数 / 降光秒数**：非负数，分别用于当前值低于/高于目标的灯；0 秒立即到位；
+- **跟随等待**：可空（等手动 GO）；填非负秒数后，所有灯到位才开始计时，到期自动执行下一条，末项不再跟随。
+
+编辑器同时显示每行“解析目标”，可直接核对继承与显式零的结果。运行中节目编辑自动锁定。
+
+## 计时规则
+
+- 每盏灯从“当前基础亮度”按目标 Cue 的升/降时长线性过渡；渐变中再次 GO 或跳场，以当时基础亮度为新起点接续，不回弹到旧目标。
+- 播放机按**经过时间**（帧回调传入的真实 dt）推进；单帧延迟很大时，超时时间会结转入下一条 Cue，零秒跟随在同一帧内链式执行，不累积漂移、不漏连续跟随。
+- 手动 GO 或跳场会取消尚未结束的旧跟随。
+- 输出合成顺序：`接管值或基础值 → 乘总控比例 → 黑场置零`。
+
+## 代码组织
+
+- `src/engine/types.ts`：领域类型与 12 灯常量；
+- `src/engine/cues.ts`：Cue 校验（错误定位到编号/字段）与节目顺序目标解析；
+- `src/engine/playback.ts`：纯逻辑播放机（GO/跳场/暂停/继续/停止/`tick(dt)`、逐灯渐变、跟随链），不依赖 DOM/时钟；
+- `src/engine/output.ts`：输出合成纯函数（接管、总控、黑场）；
+- `src/state/console.ts`：Svelte 5 `$state` 控台状态与 `requestAnimationFrame` 帧循环；
+- `src/lib/StageView.svelte`、`Transport.svelte`、`CueEditor.svelte`、`ManualChannels.svelte`：舞台、走台、节目编辑、手动接管四个交互面板；
+- `src/engine/engine.test.ts`：解析/校验、升降时长、渐变中接续 GO、跟随链与零秒跟随、暂停剩余时间、停止、输出合成的测试。
+
+内置 4 条示例 Cue（面光暖起 → 主角追光 → 群舞蓝满台 → 落幕黑场），页面底部附操作示例。
